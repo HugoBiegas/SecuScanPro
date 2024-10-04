@@ -304,60 +304,63 @@ func injectionBDDTest(elements []PageElement) ([]PageElement, error) {
 
 	return elements, nil
 }
-
 // Function to test SQL Injection in URL parameters dynamically
 func testSQLInjectionInURL(rawURL, payload string) (bool, error) {
-    // Parse the URL to extract query parameters
-    parsedURL, err := url.Parse(rawURL)
-    if err != nil {
-        return false, fmt.Errorf("error parsing URL: %v", err)
-    }
+	// Parse the URL to extract query parameters
+	parsedURL, err := url.Parse(rawURL)
+	if err != nil {
+		return false, fmt.Errorf("error parsing URL: %v", err)
+	}
 
-    // Get the query parameters
-    params := parsedURL.Query()
+	// Get the query parameters
+	params := parsedURL.Query()
 
-    // Iterate over each query parameter and inject the SQL payload
-    for paramName := range params {
-        // Inject the SQL payload into the current parameter
-        params.Set(paramName, urlEncode(payload))
-        parsedURL.RawQuery = params.Encode()
+	// Iterate over each query parameter and inject the SQL payload
+	for paramName := range params {
+		// Inject the SQL payload into the current parameter
+		params.Set(paramName, urlEncode(payload))
+		parsedURL.RawQuery = params.Encode()
 
-        // Construct the final injected URL
-        injectedURL := parsedURL.String()
+		// Construct the final injected URL
+		injectedURL := parsedURL.String()
 
-        // Perform the HTTP GET request
-        resp, err := http.Get(injectedURL)
-        if err != nil {
-            return false, fmt.Errorf("error during GET request: %v", err)
-        }
-        defer resp.Body.Close()
+		// Display the URL being tested
+		fmt.Printf("Testing URL: %s with payload: %s\n", injectedURL, payload)
 
-        // Analyze the response status code
-        if resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusServiceUnavailable {
-            // Potential vulnerability, server returned error status code
-            return true, nil
-        }
+		// Perform the HTTP GET request
+		resp, err := http.Get(injectedURL)
+		if err != nil {
+			return false, fmt.Errorf("error during GET request: %v", err)
+		}
+		defer resp.Body.Close()
 
-        // Read the response body
-        body, err := ioutil.ReadAll(resp.Body)
-        if err != nil {
-            return false, fmt.Errorf("error reading response body: %v", err)
-        }
+		// Analyze the response status code
+		if resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusServiceUnavailable {
+			// Potential vulnerability, server returned error status code
+			return true, nil
+		}
 
-        // Check for common SQL error messages in the response
-        if strings.Contains(string(body), "SQL syntax") || strings.Contains(string(body), "database error") || strings.Contains(string(body), "unclosed quotation mark") {
-            return true, nil
-        }
-    }
+		// Read the response body
+		body, err := ioutil.ReadAll(resp.Body)
+		if err != nil {
+			return false, fmt.Errorf("error reading response body: %v", err)
+		}
 
-    return false, nil
+		// Check for common SQL error messages in the response
+		if strings.Contains(string(body), "SQL syntax") || strings.Contains(string(body), "database error") || strings.Contains(string(body), "unclosed quotation mark") {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
-
-
 // Function to test SQL Injection in form submissions with more checks
 func testSQLInjectionInForm(action, input, payload string) (bool, error) {
 	// Construct the POST data with the SQL Injection payload
 	postData := fmt.Sprintf("%s=%s", input, urlEncode(payload))
+
+	// Display the form action URL and the payload being tested
+	fmt.Printf("Testing form action: %s with input: %s and payload: %s\n", action, input, payload)
 
 	// Perform the HTTP POST request
 	resp, err := http.Post(action, "application/x-www-form-urlencoded", strings.NewReader(postData))
