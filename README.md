@@ -66,7 +66,7 @@ go run .\crawler.go
 ### Example
 
 ```bash
-> go run main.go
+> go run .\crawler.go
 Tapez 1 pour analyser un site, 2 pour extraire les rapports de sécurité ou 3 pour tester une faille d'injection sur un report :
 1
 Entrez le lien du site à analyser (avec http:// ou https://) :
