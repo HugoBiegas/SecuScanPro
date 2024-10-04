@@ -49,7 +49,7 @@ Ensure that you have the following installed:
 To run the main program and start scanning websites for vulnerabilities, execute the following command:
 
 ```bash
-go run main.go
+go run .\crawler.go
 ```
 
 ### Usage Instructions
