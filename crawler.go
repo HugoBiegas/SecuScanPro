@@ -17,6 +17,10 @@ import (
 // Nom du fichier pour stocker les rapports de sécurité
 const securityReportsFileName = "reports/report_%s.json"
 
+const InjectionSQLAtester = "A tester"
+const InjectionSQLNonSecurise = "Non sécurisé"
+const InjectionSQLSecurise = "Sécurisé"
+
 // Payloads pour les injections SQL pour différents types de bases de données
 var sqlInjectionPayloads = map[string][]string{
 	"MySQL": {
@@ -121,7 +125,7 @@ func extractPageElements(resp *http.Response, baseURL *url.URL) ([]PageElement, 
 			t := z.Token()
 			if t.Data == "form" {
 				if currentForm.CSRFStatus == "" {
-					currentForm.CSRFStatus = "Non sécurisé (Pas de CSRF)"
+					currentForm.CSRFStatus = InjectionSQLNonSecurise
 				}
 				elements = append(elements, currentForm)
 			}
@@ -156,7 +160,7 @@ func extractLink(t html.Token, baseURL *url.URL) PageElement {
 				Content:     link.String(),
 			}
 			if link.RawQuery != "" {
-				pageElement.InjectionSQL = "A tester"
+				pageElement.InjectionSQL = InjectionSQLAtester
 			}
 			return pageElement
 		}
@@ -168,7 +172,7 @@ func extractForm(t html.Token, baseURL *url.URL) PageElement {
 	form := PageElement{
 		ElementType: "form",
 		Attribute:   "action",
-		InjectionSQL: "A tester",
+		InjectionSQL: InjectionSQLAtester,
 	}
 	for _, attr := range t.Attr {
 		if attr.Key == "action" {
@@ -195,7 +199,7 @@ func extractInput(t html.Token, currentForm *PageElement) {
 	}
 	currentForm.Inputs = append(currentForm.Inputs, inputName)
 	if isCSRFInput {
-		currentForm.CSRFStatus = "Sécurisé"
+		currentForm.CSRFStatus = InjectionSQLSecurise
 	}
 }
 
@@ -261,12 +265,12 @@ func injectionBDDTest(elements []PageElement) ([]PageElement, error) {
 			}
 			if vulnerable {
 				fmt.Printf("SQL Injection vulnerability found in input: %s (DBMS: %s, Payload: %s)\n", el.Content, dbms, payload)
-				el.InjectionSQL = "Non sécurisé"
+				el.InjectionSQL = InjectionSQLNonSecurise
 				detectedVulnDBMS = dbms
 				return el, true
 			}
 		}
-		el.InjectionSQL = "Sécurisé"
+		el.InjectionSQL = InjectionSQLSecurise
 		return el, false
 	}
 
@@ -282,13 +286,13 @@ func injectionBDDTest(elements []PageElement) ([]PageElement, error) {
 				}
 				if vulnerable {
 					fmt.Printf("SQL Injection vulnerability found in form: %s (DBMS: %s, Input: %s, Payload: %s)\n", el.Content, dbms, input, payload)
-					el.InjectionSQL = "Non sécurisé"
+					el.InjectionSQL = InjectionSQLNonSecurise
 					formVulnerable = true
 				}
 			}
 		}
 		if !formVulnerable {
-			el.InjectionSQL = "Sécurisé"
+			el.InjectionSQL = InjectionSQLSecurise
 		}
 		return el, formVulnerable
 	}
@@ -438,7 +442,7 @@ func extractReportByID(scanID string, typeSecuScan int) error {
 		// Filter the elements to only include those with "A tester" in InjectionSQL
 		var elementsToTest []PageElement
 		for _, el := range report.Results {
-			if el.InjectionSQL == "A tester" || el.InjectionSQL == "Sécurisé" || el.InjectionSQL == "Non sécurisé" {
+			if el.InjectionSQL == InjectionSQLAtester || el.InjectionSQL == InjectionSQLSecurise || el.InjectionSQL == InjectionSQLNonSecurise {
 				elementsToTest = append(elementsToTest, el)
 			}
 		}
