@@ -1,89 +1,94 @@
+# SecuScanPro - Analyseur de Sécurité Web Professionnel
 
-# Security Scanner Project
+SecuScanPro est un outil d'analyse de sécurité web avancé développé en Go, conçu pour identifier automatiquement les vulnérabilités dans les applications web. Il met l'accent sur la détection des injections SQL et la vérification des protections CSRF, tout en offrant une interface graphique moderne et intuitive.
 
-This Go project is a security scanner that crawls a given URL to analyze HTML elements such as forms, links, and inputs for potential vulnerabilities, including SQL injection and CSRF protection status.
+## Caractéristiques Principales
 
-## Features
+SecuScanPro intègre des fonctionnalités essentielles pour l'analyse de sécurité web :
 
-- **Crawl and Extract**: Extracts forms, links, inputs, and other HTML elements from a webpage.
-- **CSRF Detection**: Identifies whether forms are protected against CSRF attacks by checking for CSRF tokens.
-- **SQL Injection Testing**: Injects payloads into form fields and URL parameters to test for SQL injection vulnerabilities across various database management systems (MySQL, PostgreSQL, MSSQL, Oracle).
-- **Report Generation**: Generates and saves a JSON report containing the scan results, including identified vulnerabilities.
-- **Dynamic URL Testing**: Automatically extracts parameters from URLs and tests each for vulnerabilities.
+- Analyse automatique des structures web et détection des points d'entrée sensibles
+- Tests d'injection SQL pour MySQL, PostgreSQL, MSSQL et Oracle
+- Vérification automatique des protections CSRF dans les formulaires
+- Interface graphique moderne développée avec Fyne
+- Système de rapports détaillés avec stockage persistant
+- Suivi en temps réel de la progression des analyses
 
-## Getting Started
+## Installation
 
-### Prerequisites
-
-Ensure that you have the following installed:
-
-- **Go** (1.16 or higher)
-
-### Project Setup
-
-1. **Clone the Repository:**
-
-   ```bash
-   git clone https://github.com/yourusername/security-scanner.git
-   cd security-scanner
-   ```
-
-2. **Initialize a Go Module:**
-
-   Run the following command to initialize the Go module for the project:
-
-   ```bash
-   go mod init security-scanner
-   ```
-
-3. **Install Dependencies:**
-
-   Fetch the required package `golang.org/x/net/html` by running:
-
-   ```bash
-   go get golang.org/x/net/html
-   ```
-
-### Running the Scanner
-
-To run the main program and start scanning websites for vulnerabilities, execute the following command:
+Pour installer SecuScanPro, assurez-vous d'avoir Go 1.16 ou supérieur installé sur votre système.
 
 ```bash
-go run .\crawler.go
+# Cloner le repository
+git clone https://github.com/votre-username/SecuScanPro.git
+
+# Accéder au répertoire
+cd SecuScanPro
+
+# Installer les dépendances
+go mod download
+
+# Compiler le projet
+go build
 ```
 
-### Usage Instructions
+## Utilisation
 
-1. **Analyze a Website:**
-   - When prompted, input a valid URL (beginning with http:// or https://) to analyze. The scanner will extract HTML elements (such as forms, inputs) and test for vulnerabilities like SQL injection and CSRF.
-
-2. **View Reports:**
-   - You can retrieve a security report by providing the unique scan ID generated during the analysis.
-   
-3. **Test for SQL Injections:**
-   - You can test previous reports for SQL injection vulnerabilities by providing the scan ID.
-
-### Example
+Pour lancer SecuScanPro :
 
 ```bash
-> go run .\crawler.go
-Tapez 1 pour analyser un site, 2 pour extraire les rapports de sécurité ou 3 pour tester une faille d'injection sur un report :
-1
-Entrez le lien du site à analyser (avec http:// ou https://) :
-http://example.com
-Analyse terminée avec succès. ID du scan : scan-1632339128997
+./SecuScanPro
 ```
 
-### Directory Structure
+L'interface graphique vous permet de :
+
+1. Analyser un site web en entrant son URL
+2. Visualiser les rapports d'analyse précédents
+3. Effectuer des tests d'injection SQL spécifiques
+4. Consulter les statistiques de sécurité détaillées
+
+## Structure du Projet
 
 ```
-security-scanner/
-│
-├── crawler.go            # Entry point for the scanner
-├── security_reports.json # JSON file containing scan reports
-├── README.md          # Project documentation
+SecuScanPro/
+├── cmd/                    # Point d'entrée de l'application
+├── internal/              # Code interne
+│   ├── config/           # Configuration et constantes
+│   ├── crawler/          # Module d'analyse web
+│   ├── model/            # Structures de données
+│   ├── security/         # Tests de sécurité
+│   ├── storage/          # Gestion des rapports
+│   └── ui/              # Interface utilisateur
+├── reports/              # Stockage des rapports
+└── .gitignore
 ```
+
+## Dépendances Principales
+
+- [Fyne](https://fyne.io/) - Framework GUI
+- golang.org/x/net/html - Parsing HTML
+- encoding/json - Gestion des rapports
+
+## Contribution
+
+Les contributions sont les bienvenues ! Pour contribuer :
+
+1. Forkez le projet
+2. Créez votre branche de fonctionnalités
+3. Committez vos modifications
+4. Poussez vers la branche
+5. Ouvrez une Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+Ce projet est sous licence MIT - voir le fichier [LICENSE.md](LICENSE.md) pour plus de détails.
+
+## Contact
+
+Pour toute question ou suggestion, n'hésitez pas à :
+- Ouvrir une issue
+- Me contacter par email : [votre-email]
+- Consulter la documentation complète
+
+## Remerciements
+
+Un grand merci à tous les contributeurs qui ont participé à ce projet, ainsi qu'à la communauté Go pour ses excellentes ressources.
