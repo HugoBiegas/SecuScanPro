@@ -1,226 +1,228 @@
 package security
 
 import (
-	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"net/url"
 	"strings"
-
-	"fyne.io/fyne/v2"
-	"fyne.io/fyne/v2/container"
-	"fyne.io/fyne/v2/layout"
-	"fyne.io/fyne/v2/widget"
 
 	"SecuScanPro/internal/config"
 	models "SecuScanPro/internal/model"
 )
 
-func launchSQLInjectionTest(_ fyne.Window, report models.SecurityReport) {
-   testWindow := fyne.CurrentApp().NewWindow("Test d'injection SQL")
-   testWindow.Resize(fyne.NewSize(800, 600))
-
-   resultsText := widget.NewTextGrid()
-   progress := widget.NewProgressBar()
-   progress.Max = 100
-   
-   progressChan := make(chan float64)
-
-   go func() {
-       resultsText.SetText(fmt.Sprintf("Début des tests d'injection SQL pour le scan %s...\n", report.ID))
-       
-       go func() {
-           for percentage := range progressChan {
-               progress.SetValue(percentage)
-               resultsText.SetText(fmt.Sprintf("Tests en cours... %.0f%%", percentage))
-           }
-       }()
-
-       updatedElements, err := InjectionBDDTest(report.Results, progressChan)
-       close(progressChan)
-
-       if err != nil {
-           resultsText.SetText(fmt.Sprintf("Erreur lors des tests : %v", err))
-       } else {
-           report.Results = updatedElements
-           resultsText.SetText(fmt.Sprintf("Tests terminés avec succès\nID: %s\nURL: %s\nDate: %s", 
-               report.ID, report.URL, report.Date))
-       }
-   }()
-
-   closeButton := widget.NewButton("Fermer", func() {
-       testWindow.Close()
-   })
-
-   content := container.NewBorder(
-       container.NewVBox(
-           widget.NewLabel("Test d'injection SQL en cours"),
-           progress,
-       ),
-       container.NewHBox(layout.NewSpacer(), closeButton, layout.NewSpacer()),
-       nil,
-       nil,
-       container.NewScroll(resultsText),
-   )
-
-   testWindow.SetContent(content)
-   testWindow.Show()
-}
-
+// InjectionBDDTest teste les injections SQL sur une liste d'éléments de page.
+// Retourne les éléments mis à jour avec le statut d'injection SQL, et un canal de progression pour suivre l'avancement.
 func InjectionBDDTest(elements []models.PageElement, progressChan chan float64) ([]models.PageElement, error) {
-    detectedVulnDBMS := ""
-    totalPayloads := calculateTotalPayloads(elements)
+    // Filtrer les éléments à tester pour les injections SQL
+    elementsToTest := make([]models.PageElement, 0)
+    for _, el := range elements {
+        if el.InjectionSQL == config.InjectionSQLAtester {
+            elementsToTest = append(elementsToTest, el)
+        }
+    }
+
+    // Créer une copie des éléments pour mise à jour
+    updatedElements := make([]models.PageElement, len(elements))
+    copy(updatedElements, elements)
+
+    // Calculer le nombre total de payloads à tester
+    totalPayloads := calculateTotalPayloads(elementsToTest)
     completedPayloads := 0
 
-    for i, el := range elements {
-        dbmsToTest := getDBMSToTest(detectedVulnDBMS)
-        for _, dbms := range dbmsToTest {
-            payloads := config.SQLInjectionPayloads[dbms]
-            if el.ElementType == "link" {
-                updatedEl, vulnerable := testSQLInjection(el, dbms, payloads, testSQLInjectionInURL, &completedPayloads, totalPayloads, progressChan)
-                elements[i] = updatedEl
-                if vulnerable {
-                    detectedVulnDBMS = dbms
-                    break
+    // Définir l'ordre des bases de données à tester
+    dbmsOrder := []string{"MySQL", "PostgreSQL", "MSSQL", "Oracle"}
+
+    for i, originalEl := range updatedElements {
+        // Vérifier si l'élément fait partie de ceux à tester
+        shouldTest := false
+        for _, testEl := range elementsToTest {
+            if testEl.Content == originalEl.Content && testEl.ElementType == originalEl.ElementType {
+                shouldTest = true
+                break
+            }
+        }
+
+        if shouldTest {
+            wasVulnerable := false
+
+            // Tester en fonction du type d'élément
+            switch originalEl.ElementType {
+            case "form":
+                // Tester chaque formulaire avec les payloads SQL
+                for _, dbms := range dbmsOrder {
+                    if testFormInputs(&updatedElements[i], config.SQLInjectionPayloads[dbms], &completedPayloads, totalPayloads, progressChan) {
+                        wasVulnerable = true
+                        break
+                    }
                 }
-            } else if el.ElementType == "form" {
-                formVulnerable := testFormInputs(el, dbms, payloads, &completedPayloads, totalPayloads, progressChan)
-                if !formVulnerable {
-                    elements[i].InjectionSQL = config.InjectionSQLSecurise
+                // Si aucun test n'a détecté de vulnérabilité, marquer l'élément comme sécurisé
+                if !wasVulnerable {
+                    updatedElements[i].InjectionSQL = config.InjectionSQLSecurise
+                }
+
+            case "input":
+                // Tester chaque champ d'entrée (input) avec les payloads SQL
+                for _, dbms := range dbmsOrder {
+                    if testSingleInput(&updatedElements[i], config.SQLInjectionPayloads[dbms], &completedPayloads, totalPayloads, progressChan) {
+                        wasVulnerable = true
+                        break
+                    }
+                }
+                // Si aucun test n'a détecté de vulnérabilité, marquer l'élément comme sécurisé
+                if !wasVulnerable {
+                    updatedElements[i].InjectionSQL = config.InjectionSQLSecurise
                 }
             }
         }
     }
 
-    displayTestResults(elements)
-    return elements, nil
+    return updatedElements, nil
 }
 
-func calculateTotalPayloads(elements []models.PageElement) int {
-    totalPayloads := 0
-    for _, el := range elements {
-        if el.ElementType == "link" || el.ElementType == "form" {
-            for dbms := range config.SQLInjectionPayloads {
-                totalPayloads += len(config.SQLInjectionPayloads[dbms])
-            }
-        }
+// testSingleInput teste un seul champ d'entrée pour des vulnérabilités SQLi.
+// Retourne vrai si une vulnérabilité est détectée.
+func testSingleInput(el *models.PageElement, payloads []string, completedPayloads *int, totalPayloads int, progressChan chan float64) bool {
+    // Envoyer une requête initiale pour obtenir une réponse de référence
+    initialData := url.Values{}
+    initialData.Set(el.Attribute, "test_value")
+
+    initialResp, err := http.PostForm(el.Content, initialData)
+    if err != nil {
+        log.Printf("Erreur avec la requête initiale : %v", err)
+        return false
     }
-    return totalPayloads
-}
+    defer initialResp.Body.Close()
+    initialBody, _ := io.ReadAll(initialResp.Body)
+    initialResponse := string(initialBody)
 
-func getDBMSToTest(detectedVulnDBMS string) []string {
-    if detectedVulnDBMS == "" {
-        dbmsToTest := []string{}
-        for dbms := range config.SQLInjectionPayloads {
-            dbmsToTest = append(dbmsToTest, dbms)
-        }
-        return dbmsToTest
-    }
-    return []string{detectedVulnDBMS}
-}
-
-func testSQLInjection(el models.PageElement, dbms string, payloads []string, testFunc func(models.PageElement, string, string) (bool, error), completedPayloads *int, totalPayloads int, progressChan chan float64) (models.PageElement, bool) {
+    // Tester chaque payload
     for _, payload := range payloads {
-        vulnerable, err := testFunc(el, dbms, payload)
+        // Mise à jour de la progression
+        *completedPayloads++
+        progress := (float64(*completedPayloads) / float64(totalPayloads)) * 100
+        progressChan <- math.Round(progress*100) / 100
+
+        // Préparer les données avec le payload
+        testData := url.Values{}
+        testData.Set(el.Attribute, payload)
+
+        resp, err := http.PostForm(el.Content, testData)
         if err != nil {
-            log.Printf("Error during SQLi test: %v\n", err)
+            log.Printf("Erreur lors du test du champ %s : %v", el.Attribute, err)
             continue
         }
-        *completedPayloads++
-        progress := float64(*completedPayloads) / float64(totalPayloads) * 100
-        progressChan <- progress
 
-        if vulnerable {
+        body, _ := io.ReadAll(resp.Body)
+        resp.Body.Close()
+        response := string(body)
+
+        // Détecter si la réponse diffère de la réponse de référence ou contient des indicateurs de succès
+        if response != initialResponse || 
+           strings.Contains(response, "Login successful") || 
+           strings.Contains(response, "Welcome") || 
+           strings.Contains(response, "successfully") {
             el.InjectionSQL = config.InjectionSQLNonSecurise
-            return el, true
+            return true
         }
     }
+
+    // Si aucune vulnérabilité n'a été détectée, marquer l'élément comme sécurisé
     el.InjectionSQL = config.InjectionSQLSecurise
-    return el, false
+    return false
 }
 
-func testFormInputs(el models.PageElement, dbms string, payloads []string, completedPayloads *int, totalPayloads int, progressChan chan float64) bool {
-    formVulnerable := false
-    for range el.Inputs {
-        _, vulnerable := testSQLInjection(el, dbms, payloads, testSQLInjectionInForm, completedPayloads, totalPayloads, progressChan)
-        if vulnerable {
-            formVulnerable = true
+// calculateTotalPayloads calcule le nombre total de payloads à tester pour une liste d'éléments.
+func calculateTotalPayloads(elements []models.PageElement) int {
+    total := 0
+    for _, el := range elements {
+        if el.ElementType == "link" {
+            // Ajouter tous les payloads pour chaque DBMS
+            for _, payloads := range config.SQLInjectionPayloads {
+                total += len(payloads)
+            }
+        } else if el.ElementType == "form" {
+            inputCount := len(el.Inputs)
+            if inputCount == 0 {
+                inputCount = 1
+            }
+            // Ajouter tous les payloads pour chaque input pour chaque DBMS
+            for _, payloads := range config.SQLInjectionPayloads {
+                total += len(payloads) * inputCount
+            }
         }
     }
-    return formVulnerable
+    return total
 }
 
- 
-func testSQLInjectionInURL(el models.PageElement, dbms, payload string) (bool, error) {
-   parsedURL, err := url.Parse(el.Content)
-   if err != nil {
-       return false, fmt.Errorf("error parsing URL: %v", err)
-   }
+// testFormInputs teste les champs d'un formulaire pour des vulnérabilités SQLi.
+// Retourne vrai si une vulnérabilité est détectée.
+func testFormInputs(el *models.PageElement, payloads []string, completedPayloads *int, totalPayloads int, progressChan chan float64) bool {
+    if len(el.Inputs) == 0 {
+        el.InjectionSQL = config.InjectionSQLSecurise
+        return false
+    }
 
-   params := parsedURL.Query()
-   for paramName := range params {
-       params.Set(paramName, urlEncode(payload))
-       parsedURL.RawQuery = params.Encode()
-       injectedURL := parsedURL.String()
+    // Envoyer une requête initiale pour obtenir une réponse de référence
+    initialData := url.Values{}
+    for _, input := range el.Inputs {
+        initialData.Set(input, "test_user")
+    }
 
-       fmt.Printf("Testing URL: %s with payload: %s\n", injectedURL, payload)
+    initialResp, err := http.PostForm(el.Content, initialData)
+    if err != nil {
+        log.Printf("Erreur avec la requête initiale : %v", err)
+        return false
+    }
+    defer initialResp.Body.Close()
+    initialBody, _ := io.ReadAll(initialResp.Body)
+    initialResponse := string(initialBody)
 
-       resp, err := http.Get(injectedURL)
-       if err != nil {
-           return false, fmt.Errorf("error during GET request: %v", err)
-       }
-       defer resp.Body.Close()
+    // Tester chaque champ avec les payloads
+    for _, input := range el.Inputs {
+        for _, payload := range payloads {
+            *completedPayloads++
+            progress := (float64(*completedPayloads) / float64(totalPayloads)) * 100
+            progressChan <- math.Round(progress*100) / 100
 
-       if isVulnerable(resp) {
-           return true, nil
-       }
-   }
+            // Préparer les données avec le payload
+            testData := url.Values{}
+            testData.Set(input, payload)
+            for _, otherInput := range el.Inputs {
+                if otherInput != input {
+                    testData.Set(otherInput, "test_user")
+                }
+            }
 
-   return false, nil
+            resp, err := http.PostForm(el.Content, testData)
+            if err != nil {
+                log.Printf("Erreur lors du test du champ %s : %v", input, err)
+                continue
+            }
+
+            body, _ := io.ReadAll(resp.Body)
+            resp.Body.Close()
+            response := string(body)
+
+            // Détecter si la réponse diffère ou contient des indicateurs de succès
+            if response != initialResponse || 
+               strings.Contains(response, "Login successful") || 
+               strings.Contains(response, "Welcome") || 
+               strings.Contains(response, "successfully") {
+                el.InjectionSQL = config.InjectionSQLNonSecurise
+                progressChan <- 100.0
+                return true
+            }
+        }
+    }
+
+    // Si aucune vulnérabilité n'a été détectée, marquer l'élément comme sécurisé
+    el.InjectionSQL = config.InjectionSQLSecurise
+    return false
 }
-
-func testSQLInjectionInForm(el models.PageElement, dbms, payload string) (bool, error) {
-   postData := fmt.Sprintf("%s=%s", el.Content, urlEncode(payload))
-   
-   fmt.Printf("Testing form action: %s with payload: %s\n", el.Content, payload)
-
-   resp, err := http.Post(el.Content, "application/x-www-form-urlencoded", strings.NewReader(postData))
-   if err != nil {
-       return false, fmt.Errorf("error during POST request: %v", err)
-   }
-   defer resp.Body.Close()
-
-   return isVulnerable(resp), nil
-}
-
-func isVulnerable(resp *http.Response) bool {
-   if resp.StatusCode == http.StatusInternalServerError || resp.StatusCode == http.StatusServiceUnavailable {
-       return true
-   }
-
-   body, err := io.ReadAll(resp.Body)
-   if err != nil {
-       return false
-   }
-
-   bodyStr := string(body)
-   return strings.Contains(bodyStr, "SQL syntax") || 
-          strings.Contains(bodyStr, "database error") || 
-          strings.Contains(bodyStr, "unclosed quotation mark")
-}
-
+// urlEncode encode une chaîne de caractères pour l'inclure en toute sécurité dans une URL.
 func urlEncode(payload string) string {
-   return url.QueryEscape(payload)
+    return url.QueryEscape(payload)
 }
 
-func displayTestResults(elements []models.PageElement) {
-   fmt.Println("\nSQL Injection testing completed.")
-   fmt.Println("=================================")
-   fmt.Println("Results:")
-   for _, el := range elements {
-       fmt.Printf("Element: %s (Type: %s, Injection: %s)\n", 
-           el.Content, el.ElementType, el.InjectionSQL)
-   }
-   fmt.Println("=================================")
-}

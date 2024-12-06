@@ -19,10 +19,11 @@ import (
 	"SecuScanPro/internal/storage"
 )
 
+
 func RunGUI() {
     myApp := app.New()
     window := myApp.NewWindow("SecuScanPro")
-    window.Resize(fyne.NewSize(800, 600))
+    window.Resize(fyne.NewSize(400, 200))
 
     // Création des composants principaux
     urlEntry := widget.NewEntry()
@@ -62,14 +63,10 @@ func handleSiteAnalysisGUI(window fyne.Window, url string) {
         return
     }
 
-    progress := dialog.NewProgress("Analyse en cours", url, window)
-    progress.Show()
-
     // Lancer l'analyse dans une goroutine
     go func() {
         elements, err := crawler.CrawlAndExtract(url)
         if err != nil {
-            progress.Hide()
             dialog.ShowError(err, window)
             return
         }
@@ -83,20 +80,21 @@ func handleSiteAnalysisGUI(window fyne.Window, url string) {
 
         err = storage.SaveReport(report)
         if err != nil {
-            progress.Hide()
             dialog.ShowError(err, window)
             return
         }
 
-        progress.Hide()
         dialog.ShowInformation("Succès", 
             fmt.Sprintf("Analyse terminée avec succès.\nID du scan : %s\nNombre d'éléments analysés : %d", 
                 report.ID, len(elements)), window)
     }()
 }
+
+
 func generateID() string {
     return fmt.Sprintf("%d", time.Now().UnixNano())
 }
+
 
 func showReportsList(window fyne.Window) {
     reports, err := storage.ListReports()
@@ -107,7 +105,7 @@ func showReportsList(window fyne.Window) {
 
     // Créer une nouvelle fenêtre pour la liste des rapports
     reportsWindow := fyne.CurrentApp().NewWindow("Rapports disponibles")
-    reportsWindow.Resize(fyne.NewSize(1000, 600)) // Fenêtre plus grande
+    reportsWindow.Resize(fyne.NewSize(800, 400)) // Fenêtre plus grande
 
     list := widget.NewList(
         func() int { return len(reports) },
@@ -149,7 +147,7 @@ func showReportsList(window fyne.Window) {
 
 func showReportDetails(_ fyne.Window, report models.SecurityReport) {
     window := fyne.CurrentApp().NewWindow("Détails du rapport")
-    window.Resize(fyne.NewSize(1200, 800))
+    window.Resize(fyne.NewSize(800, 600))
 
     header := container.NewVBox(
         widget.NewLabelWithStyle("Informations du Rapport", fyne.TextAlignLeading, fyne.TextStyle{Bold: true}),
@@ -289,12 +287,9 @@ func showReportDetails(_ fyne.Window, report models.SecurityReport) {
         nil, nil,
         container.NewScroll(resultsList),
     )
-
     window.SetContent(content)
     window.Show()
 }
-
-
 
 func showSQLInjectionReportsList(window fyne.Window) {
     reports, err := storage.ListReports()
@@ -305,7 +300,7 @@ func showSQLInjectionReportsList(window fyne.Window) {
 
     // Créer une nouvelle fenêtre pour la liste des rapports
     sqlReportsWindow := fyne.CurrentApp().NewWindow("Tests d'injection SQL - Sélection du rapport")
-    sqlReportsWindow.Resize(fyne.NewSize(1000, 600))
+    sqlReportsWindow.Resize(fyne.NewSize(800, 400))
 
     list := widget.NewList(
         func() int { return len(reports) },
@@ -352,12 +347,13 @@ func launchSQLInjectionTest(_ fyne.Window, report models.SecurityReport) {
     resultsText := widget.NewTextGrid()
     progress := widget.NewProgressBar()
     progress.Max = 100
-
+    
     progressChan := make(chan float64)
 
     go func() {
         resultsText.SetText(fmt.Sprintf("Début des tests d'injection SQL pour le scan %s...\n", report.ID))
-
+        
+        // Goroutine pour la mise à jour de la progression
         go func() {
             for percentage := range progressChan {
                 progress.SetValue(percentage)
@@ -365,17 +361,23 @@ func launchSQLInjectionTest(_ fyne.Window, report models.SecurityReport) {
             }
         }()
 
-        // Lancer les tests avec des étapes intermédiaires
         updatedElements, err := security.InjectionBDDTest(report.Results, progressChan)
         close(progressChan)
 
         if err != nil {
             resultsText.SetText(fmt.Sprintf("Erreur lors des tests : %v", err))
-        } else {
-            report.Results = updatedElements
-            resultsText.SetText(fmt.Sprintf("Tests terminés avec succès\nID: %s\nURL: %s\nDate: %s",
-                report.ID, report.URL, report.Date))
+            return
         }
+
+        // Mise à jour et sauvegarde du rapport
+        report.Results = updatedElements
+        if err := storage.SaveReport(report); err != nil {
+            resultsText.SetText(fmt.Sprintf("Erreur lors de la sauvegarde : %v", err))
+            return
+        }
+
+        resultsText.SetText(fmt.Sprintf("Tests terminés avec succès\nID: %s\nURL: %s\nDate: %s\nRapport mis à jour.", 
+            report.ID, report.URL, report.Date))
     }()
 
     closeButton := widget.NewButton("Fermer", func() {
