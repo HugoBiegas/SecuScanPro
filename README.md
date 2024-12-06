@@ -36,10 +36,10 @@ go run main.go
 
 ## Utilisation
 
-Pour lancer SecuScanPro :
+Pour lancer SecuScanPro depuit la racine du projet :
 
 ```bash
-./SecuScanPro
+go run ./cmd/main.go
 ```
 
 L'interface graphique vous permet de :
