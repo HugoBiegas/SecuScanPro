@@ -27,8 +27,11 @@ cd SecuScanPro
 # Installer les dépendances
 go mod download
 
-# Compiler le projet
-go build
+# Accéder au répertoire du main
+cd cmd
+
+#lancer l'applications
+go run main.go
 ```
 
 ## Utilisation
